@@ -46,7 +46,9 @@ def randomize_form_data(data):
     for part in data_parts:
         # A field with no '=' is a field with an empty value, not a crash.
         key, _, value = part.partition('=')
-        # Simple randomization: append a random number to the value
+        # Simple randomization: append a random number to the value. Every
+        # field gets one, including fields whose value was meant to stay
+        # fixed, like a form type marker. There is no way to exempt one.
         random_value = value + str(random.randint(1000, 9999))
         randomized_parts.append(f"{key}={random_value}")
     return '&'.join(randomized_parts)
@@ -85,6 +87,8 @@ def main():
 
     # Prepare headers
     headers = {'User-Agent': args.user_agent}
+    # Custom headers are applied after the defaults, so a -H User-Agent
+    # replaces mine instead of sending both. Same for Content-Type.
     for header in args.header:
       try:
         key, value = header.split(':', 1)
@@ -119,6 +123,9 @@ def main():
                     tally["rejected"] += 1
                 elif response.status_code >= 500:
                     tally["server_error"] += 1
+                # A 3xx answer lands in no bucket at all. It was sent and
+                # answered, but the answered total below leaves it out, so
+                # a redirecting form makes the summary undercount quietly.
 
                 # Log the response status code
                 logging.info(f"Request {i+1}: Status Code = {response.status_code}")
@@ -126,7 +133,9 @@ def main():
                 if response.status_code >= 400:
                     logging.warning(f"Request {i+1}: Received error status code {response.status_code}")
 
-                # Introduce delay
+                # Introduce delay. The sleep sits inside the success path,
+                # so a request that raises gets no delay before the next
+                # attempt, and the last request still sleeps before ending.
                 time.sleep(args.delay)
 
             except requests.exceptions.RequestException as e:
